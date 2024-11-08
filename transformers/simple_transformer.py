@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 import seaborn as sns
+import wandb
     
 
-# 1. First let's create our sentence and vocabulary
 sentence = "hello my name is lydia"
 words = sentence.split()
 vocab = {word: idx for idx, word in enumerate(words)}
@@ -12,12 +12,32 @@ vocab_size = len(vocab)
 
 embedding_dim = 8
 
+class Magic(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(embedding_dim, embedding_dim)
+        self.w_Q = nn.Linear(embedding_dim, embedding_dim)
+        self.w_K = nn.Linear(embedding_dim, embedding_dim)
+        self.w_V = nn.Linear(embedding_dim, embedding_dim)
+
+    def forward(self,x):
+        Q = self.w_Q(x)
+        K = self.w_K(x)
+        V = self.w_V(x)
+        attn = torch.matmul(Q, K.transpose(0,1))
+        out = torch.matmul(attn, V)
+        return out
+
+
 class SimpleTransformer(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, max_seq_length=5):
+    def __init__(self, vocab_size, embedding_dim, max_seq_length=5, num_layers=4):
         super().__init__()
         self.word_embedding = nn.Embedding(vocab_size + 1, embedding_dim)  # +1 for mask token
         self.position_embedding = nn.Embedding(max_seq_length, embedding_dim)
         self.layer_norm = nn.LayerNorm(embedding_dim)
+
+        self.magic = nn.ModuleList([Magic(embedding_dim) for _ in range(num_layers)])
+
         self.prediction_head = nn.Linear(embedding_dim, vocab_size)
         
     def forward(self, x):
@@ -29,54 +49,19 @@ class SimpleTransformer(nn.Module):
         pos_embeddings = self.position_embedding(positions)
         
         # Combine word and position embeddings
-        embeddings = word_embeddings + pos_embeddings
-        embeddings = self.layer_norm(embeddings)
-        
-        # Attention mechanism
-        attention_scores = torch.matmul(embeddings, embeddings.transpose(0, 1))
-        attention_weights = torch.softmax(attention_scores, dim=-1)
-        hidden_states = torch.matmul(attention_weights, embeddings)
+        x = word_embeddings + pos_embeddings.unsqueeze(0)
+         # Pass through Magic layers
+        for magic_layer in self.magic:
+            x = magic_layer(x)
         
         # Predict
-        logits = self.prediction_head(hidden_states)
+        logits = self.prediction_head(x)
         
         return logits
 
 # Create input tensor
 input_ids = torch.tensor([vocab[word] for word in words])
 print("Original input_ids:", input_ids.tolist())
-
-# Initialize model
-# model = SimpleTransformer(vocab_size, embedding_dim)
-
-# Get outputs
-# embeddings, hidden_states, attention_weights, predictions = model(input_ids)
-
-# Visualization functions
-# def plot_matrix(matrix, title, words, is_attention=False):
-#     plt.figure(figsize=(10, 8))
-#     if is_attention:
-#         sns.heatmap(matrix, xticklabels=words, yticklabels=words, annot=True, fmt='.2f')
-#     else:
-#         # For embeddings and hidden states, we show word × embedding_dim
-#         sns.heatmap(matrix, xticklabels=range(embedding_dim), 
-#                    yticklabels=words, annot=True, fmt='.2f')
-#     plt.title(title)
-#     plt.show()
-
-# Print results
-
-# print("\nOriginal Embeddings:")
-# print(embeddings.detach().tolist())
-# plot_matrix(embeddings.detach().tolist(), "Word Embeddings", words)
-
-# print("\nAttention Weights:")
-# print(attention_weights.detach().tolist())
-# plot_matrix(attention_weights.detach().tolist(), "Attention Weights", words, is_attention=True)
-
-# print("\nHidden States:")
-# print(hidden_states.detach().tolist())
-# plot_matrix(hidden_states.detach().tolist(), "Hidden States", words)
 
 
 def create_masked_input(input_ids, mask_token_id=vocab_size):
